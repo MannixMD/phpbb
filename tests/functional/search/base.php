@@ -183,6 +183,7 @@ abstract class phpbb_functional_search_base extends phpbb_functional_test_case
 		}
 
 		$this->assert_search_not_found('loremipsumdedo');
+		$this->assert_search_not_found('loremipsumdedo+-'); // test search query ending with the space followed by hyphen
 		$this->assert_search_not_found('barsearch+-testing'); // test excluding keyword
 		$this->assert_search_for_author_not_found('authornotexists');
 
@@ -210,11 +211,26 @@ abstract class phpbb_functional_search_base extends phpbb_functional_test_case
 		);
 		$form->setValues($form_values);
 		$crawler = self::submit($form);
+
+		$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+
+		if ($meta_refresh->count() > 0)
+		{
+			// Wait for posts to be fully indexed
+			while ($meta_refresh->count() > 0)
+			{
+				preg_match('#url=.+/(adm+.+)#', $meta_refresh->attr('content'), $match);
+				$url = $match[1];
+				$crawler = self::request('POST', $url);
+				$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+			}
+		}
+
 		$this->assertContainsLang('SEARCH_INDEX_CREATED', $crawler->text());
 
 		// Ensure search index has been actually created
 		$crawler = self::request('GET', 'adm/index.php?i=acp_search&mode=index&sid=' . $this->sid);
-		$posts_indexed = (int) $crawler->filter('#acp_search_index_' . $search_type . ' td')->eq(1)->text();
+		$posts_indexed = (int) $crawler->filter('#acp_search_index_' . str_replace('\\', '-', $search_type) . ' td')->eq(1)->text();
 		$this->assertTrue($posts_indexed > 0);
 	}
 
@@ -232,11 +248,26 @@ abstract class phpbb_functional_search_base extends phpbb_functional_test_case
 		);
 		$form->setValues($form_values);
 		$crawler = self::submit($form);
+
+		$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+
+		if ($meta_refresh->count() > 0)
+		{
+			// Wait for index to be fully deleted
+			while ($meta_refresh->count() > 0)
+			{
+				preg_match('#url=.+/(adm+.+)#', $meta_refresh->attr('content'), $match);
+				$url = $match[1];
+				$crawler = self::request('POST', $url);
+				$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+			}
+		}
+
 		$this->assertContainsLang('SEARCH_INDEX_REMOVED', $crawler->text());
 
 		// Ensure search index has been actually removed
 		$crawler = self::request('GET', 'adm/index.php?i=acp_search&mode=index&sid=' . $this->sid);
-		$posts_indexed = (int) $crawler->filter('#acp_search_index_' . $this->search_backend . ' td')->eq(1)->text();
+		$posts_indexed = (int) $crawler->filter('#acp_search_index_' . str_replace('\\', '-', $this->search_backend) . ' td')->eq(1)->text();
 		$this->assertEquals(0, $posts_indexed);
 	}
 }

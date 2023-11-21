@@ -1085,7 +1085,7 @@ function smiley_text($text, $force_option = false)
 	}
 	else
 	{
-		$root_path = (defined('PHPBB_USE_BOARD_URL_PATH') && PHPBB_USE_BOARD_URL_PATH) ? generate_board_url() . '/' : $phpbb_path_helper->get_web_root_path();
+		$root_path = $phpbb_path_helper->get_web_root_path();
 
 		/**
 		* Event to override the root_path for smilies
@@ -1285,14 +1285,26 @@ function parse_attachments($forum_id, &$message, &$attachments, &$update_count_a
 				$display_cat = attachment_category::NONE;
 			}
 
-			$download_link = $controller_helper->route('phpbb_storage_attachment', ['file' => (int) $attachment['attach_id']]);
+			$download_link = $controller_helper->route(
+				'phpbb_storage_attachment',
+				[
+					'id'		=> (int) $attachment['attach_id'],
+					'filename'	=> $attachment['real_filename'],
+				]
+			);
 			$l_downloaded_viewed = 'VIEWED_COUNTS';
 
 			switch ($display_cat)
 			{
 				// Images
 				case attachment_category::IMAGE:
-					$inline_link = $controller_helper->route('phpbb_storage_attachment', ['file' => (int) $attachment['attach_id']]);
+					$inline_link = $controller_helper->route(
+						'phpbb_storage_attachment',
+						[
+							'id'		=> (int) $attachment['attach_id'],
+							'filename'	=> $attachment['real_filename'],
+						]
+					);
 
 					$block_array += array(
 						'S_IMAGE'		=> true,
@@ -1304,7 +1316,14 @@ function parse_attachments($forum_id, &$message, &$attachments, &$update_count_a
 
 				// Images, but display Thumbnail
 				case attachment_category::THUMB:
-					$thumbnail_link = $controller_helper->route('phpbb_storage_attachment', ['file' => (int) $attachment['attach_id'], 't' => 1]);
+					$thumbnail_link = $controller_helper->route(
+						'phpbb_storage_attachment',
+						[
+							'id'		=> (int) $attachment['attach_id'],
+							'filename'	=> $attachment['real_filename'],
+							't'			=> 1,
+						]
+					);
 
 					$block_array += array(
 						'S_THUMBNAIL'		=> true,

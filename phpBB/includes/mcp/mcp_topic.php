@@ -54,6 +54,7 @@ function mcp_topic_view($id, $mode, $action)
 	$sort			= isset($_POST['sort']) ? true : false;
 	$submitted_id_list	= $request->variable('post_ids', array(0));
 	$checked_ids = $post_id_list = $request->variable('post_id_list', array(0));
+	$view		= $request->variable('view', '');
 
 	add_form_key('mcp_topic');
 
@@ -186,6 +187,7 @@ function mcp_topic_view($id, $mode, $action)
 	{
 		$rowset[] = $row;
 		$post_id_list[] = $row['post_id'];
+		$rowset_posttime['post_time'] = $row['post_time'];
 	}
 	$db->sql_freeresult($result);
 
@@ -199,6 +201,16 @@ function mcp_topic_view($id, $mode, $action)
 	else
 	{
 		$topic_tracking_info = get_complete_topic_tracking($topic_info['forum_id'], $topic_id);
+	}
+
+	$first_unread = $post_unread = false;
+
+	$post_unread = (isset($topic_tracking_info[$topic_id]) && $rowset_posttime['post_time'] > $topic_tracking_info[$topic_id]) ? true : false;
+
+	$s_first_unread = false;
+	if (!$first_unread && $post_unread)
+	{
+		$s_first_unread = $first_unread = true;
 	}
 
 	$has_unapproved_posts = $has_deleted_posts = false;
@@ -294,10 +306,13 @@ function mcp_topic_view($id, $mode, $action)
 			'S_POST_DELETED'	=> ($row['post_visibility'] == ITEM_DELETED && $auth->acl_get('m_approve', $topic_info['forum_id'])),
 			'S_CHECKED'			=> (($submitted_id_list && !in_array(intval($row['post_id']), $submitted_id_list)) || in_array(intval($row['post_id']), $checked_ids)) ? true : false,
 			'S_HAS_ATTACHMENTS'	=> (!empty($attachments[$row['post_id']])) ? true : false,
+			'S_FIRST_UNREAD'	=> $s_first_unread,
+			'S_UNREAD_VIEW'		=> $view == 'unread',
 
 			'U_POST_DETAILS'	=> "$url&amp;i=$id&amp;p={$row['post_id']}&amp;mode=post_details",
 			'U_MCP_APPROVE'		=> ($auth->acl_get('m_approve', $topic_info['forum_id'])) ? append_sid("{$phpbb_root_path}mcp.$phpEx", 'i=queue&amp;mode=approve_details&amp;p=' . $row['post_id']) : '',
 			'U_MCP_REPORT'		=> ($auth->acl_get('m_report', $topic_info['forum_id'])) ? append_sid("{$phpbb_root_path}mcp.$phpEx", 'i=reports&amp;mode=report_details&amp;p=' . $row['post_id']) : '',
+			'U_MINI_POST'		=> append_sid("{$phpbb_root_path}viewtopic.$phpEx", 'p=' . $row['post_id']) . '#p' . $row['post_id'],
 		);
 
 		/**
@@ -390,7 +405,7 @@ function mcp_topic_view($id, $mode, $action)
 		'TOPIC_TITLE'		=> $topic_info['topic_title'],
 		'U_VIEW_TOPIC'		=> append_sid("{$phpbb_root_path}viewtopic.$phpEx", 't=' . $topic_info['topic_id']),
 
-		'TO_TOPIC_ID'		=> $to_topic_id,
+		'TO_TOPIC_ID'		=> $to_topic_id ?: '',
 		'TO_TOPIC_INFO'		=> ($to_topic_id) ? sprintf($user->lang['YOU_SELECTED_TOPIC'], $to_topic_id, '<a href="' . append_sid("{$phpbb_root_path}viewtopic.$phpEx", 't=' . $to_topic_id) . '">' . $to_topic_info['topic_title'] . '</a>') : '',
 
 		'SPLIT_SUBJECT'		=> $subject,
@@ -646,9 +661,13 @@ function split_topic($action, $topic_id, $to_forum_id, $subject)
 			$topic_info['topic_title']
 		));
 
-		// Change topic title of first post
-		$sql = 'UPDATE ' . POSTS_TABLE . "
-			SET post_subject = '" . $db->sql_escape($subject) . "'
+		// Change topic title of first post and write icon_id to post
+		$sql_ary = [
+			'post_subject'		=> $subject,
+			'icon_id'			=> $icon_id,
+		];
+		$sql = 'UPDATE ' . POSTS_TABLE . '
+			SET ' . $db->sql_build_array('UPDATE', $sql_ary) . "
 			WHERE post_id = {$post_id_list[0]}";
 		$db->sql_query($sql);
 
@@ -735,6 +754,7 @@ function split_topic($action, $topic_id, $to_forum_id, $subject)
 
 		// Update forum statistics
 		$config->increment('num_topics', 1, false);
+		sync('forum', 'forum_id', [$to_forum_id], true, true);
 
 		// Link back to both topics
 		$return_link = sprintf($user->lang['RETURN_TOPIC'], '<a href="' . append_sid("{$phpbb_root_path}viewtopic.$phpEx", 't=' . $post_info['topic_id']) . '">', '</a>') . '<br /><br />' . sprintf($user->lang['RETURN_NEW_TOPIC'], '<a href="' . append_sid("{$phpbb_root_path}viewtopic.$phpEx", 't=' . $to_topic_id) . '">', '</a>');

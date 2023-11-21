@@ -1056,7 +1056,8 @@ class parse_message extends bbcode_firstpass
 	function __construct($message = '')
 	{
 		// Init BBCode UID
-		$this->bbcode_uid = substr(base_convert(unique_id(), 16, 36), 0, BBCODE_UID_LEN);
+		$unique_id = preg_replace('/[^0-9a-f]/', '', unique_id());
+		$this->bbcode_uid = substr(base_convert($unique_id, 16, 36), 0, BBCODE_UID_LEN);
 		$this->message = $message;
 	}
 
@@ -1094,7 +1095,7 @@ class parse_message extends bbcode_firstpass
 		}
 
 		// Store message length...
-		$message_length = ($mode == 'post') ? utf8_strlen($this->message) : utf8_strlen(preg_replace('#\[\/?[a-z\*\+\-]+(=[\S]+)?\]#ius', ' ', $this->message));
+		$message_length = ($mode == 'post') ? utf8_strlen($this->message) : utf8_strlen(preg_replace('#\[\/?[a-z\*\+\-]+(?:=\S+?)?\]#ius', '', $this->message));
 
 		// Maximum message length check. 0 disables this check completely.
 		if ((int) $config['max_' . $mode . '_chars'] > 0 && $message_length > (int) $config['max_' . $mode . '_chars'])
@@ -1716,7 +1717,13 @@ class parse_message extends bbcode_firstpass
 
 						if (isset($this->plupload) && $this->plupload->is_active())
 						{
-							$download_url = $controller_helper->route('phpbb_storage_attachment', ['file' => (int) $new_entry['attach_id']]);
+							$download_url = $controller_helper->route(
+								'phpbb_storage_attachment',
+								[
+									'id'		=> (int) $new_entry['attach_id'],
+									'filename'	=> $new_entry['real_filename'],
+								]
+							);
 
 							// Send the client the attachment data to maintain state
 							$json_response->send(array('data' => $this->attachment_data, 'download_url' => $download_url));

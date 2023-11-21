@@ -268,7 +268,7 @@ interface driver_interface
 	* @return	mixed		String value of the field in the selected row,
 	*						false, if the row does not exist
 	*/
-	public function sql_fetchfield($field, $rownum = false, $query_id = false);
+	public function sql_fetchfield($field, $rownum = false, &$query_id = false);
 
 	/**
 	* Fetch current row
@@ -289,11 +289,34 @@ interface driver_interface
 	public function cast_expr_to_bigint($expression);
 
 	/**
-	* Get last inserted id after insert statement
-	*
-	* @return	int|false		Autoincrement value of the last inserted row
-	*/
+
+	 * Gets the ID of the **last** inserted row immediately after an INSERT
+	 * statement.
+	 *
+	 * **Note**: Despite the name, the returned ID refers to the row that has
+	 * just been inserted, rather than the hypothetical ID of the next row if a
+	 * new one was to be inserted.
+	 *
+	 * The returned value can be used for selecting the item that has just been
+	 * inserted or for updating another table with an ID pointing to that item.
+	 *
+	 * Alias of `sql_last_inserted_id`.
+	 *
+	 * @deprecated 3.3.11-RC1 Replaced by sql_last_inserted_id(), to be removed in 4.1.0-a1
+	 *
+	 * @return	int|false	Auto-incremented value of the last inserted row
+	 */
 	public function sql_nextid();
+
+	/**
+	 * Gets the ID of the last inserted row immediately after an INSERT
+	 * statement. The returned value can be used for selecting the item that has
+	 * just been inserted or for updating another table with an ID pointing to
+	 * that item.
+	 *
+	 * @return	int|false	Auto-incremented value of the last inserted row
+	 */
+	public function sql_last_inserted_id();
 
 	/**
 	* Add to query count
@@ -472,4 +495,13 @@ interface driver_interface
 	* @return	string		Quoted version of $msg
 	*/
 	public function sql_quote($msg);
+
+	/**
+	 * Ensure query ID can be used by cache
+	 *
+	 * @param mixed $query_id Mixed type query id
+	 *
+	 * @return int|string|null Query id in string or integer format
+	 */
+	public function clean_query_id(mixed $query_id): int|string|null;
 }

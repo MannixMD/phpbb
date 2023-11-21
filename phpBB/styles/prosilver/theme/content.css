@@ -110,6 +110,10 @@ ul.topiclist dfn {
 	display: block;
 }
 
+.forum-image img {
+	max-width: 100%;
+}
+
 li.row {
 	border-top: 1px solid transparent;
 	border-bottom: 1px solid transparent;
@@ -942,3 +946,10 @@ table.fixed-width-table {
 
 /* stylelint-enable selector-max-compound-selectors */
 /* stylelint-enable selector-no-qualifying-type */
+
+/* Memberlist
+---------------------------------------- */
+.group-description ol,
+.group-description ul {
+	list-style-position: inside;
+}

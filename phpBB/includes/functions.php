@@ -36,7 +36,7 @@ function gen_rand_string($num_chars = 8)
 	$output = '';
 	for ($i = 0; $i < $num_chars; $i++)
 	{
-		$rand = random_int(0, $size-1);
+		$rand = random_int(0, $size - 1);
 		$output .= $range[$rand];
 	}
 
@@ -265,15 +265,12 @@ function phpbb_version_compare(string $version1, string $version2, string $opera
 /**
  * Pick a language, any language ...
  *
+ * @param \phpbb\db\driver\driver_interface $db DBAL driver
  * @param string $default	Language ISO code to be selected by default in the dropdown list
  * @param array $langdata	Language data in format of array(array('lang_iso' => string, lang_local_name => string), ...)
- *
- * @return string			HTML options for language selection dropdown list.
  */
-function language_select($default = '', array $langdata = [])
+function phpbb_language_select(\phpbb\db\driver\driver_interface $db, string $default = '', array $langdata = []): array
 {
-	global $db;
-
 	if (empty($langdata))
 	{
 		$sql = 'SELECT lang_iso, lang_local_name
@@ -284,11 +281,14 @@ function language_select($default = '', array $langdata = [])
 		$db->sql_freeresult($result);
 	}
 
-	$lang_options = '';
+	$lang_options = [];
 	foreach ($langdata as $row)
 	{
-		$selected = ($row['lang_iso'] == $default) ? ' selected="selected"' : '';
-		$lang_options .= '<option value="' . $row['lang_iso'] . '"' . $selected . '>' . $row['lang_local_name'] . '</option>';
+		$lang_options[] = [
+			'value'		=> $row['lang_iso'],
+			'label'		=> $row['lang_local_name'],
+			'selected'	=> $row['lang_iso'] === $default,
+		];
 	}
 
 	return $lang_options;
@@ -442,14 +442,13 @@ function phpbb_get_timezone_identifiers($selected_timezone)
 /**
 * Options to pick a timezone and date/time
 *
-* @param	\phpbb\template\template $template	phpBB template object
 * @param	\phpbb\user	$user				Object of the current user
 * @param	string		$default			A timezone to select
 * @param	boolean		$truncate			Shall we truncate the options text
 *
 * @return	string		Returns an array containing the options for the time selector.
 */
-function phpbb_timezone_select($template, $user, $default = '', $truncate = false)
+function phpbb_timezone_select($user, $default = '', $truncate = false)
 {
 	static $timezones;
 
@@ -481,27 +480,22 @@ function phpbb_timezone_select($template, $user, $default = '', $truncate = fals
 		uksort($timezones, 'phpbb_tz_select_compare');
 	}
 
-	$tz_select = $opt_group = '';
+	$opt_group = '';
+	$tz_data = [];
 
 	foreach ($timezones as $key => $timezone)
 	{
 		if ($opt_group != $timezone['offset'])
 		{
-			// Generate tz_select for backwards compatibility
-			$tz_select .= ($opt_group) ? '</optgroup>' : '';
-			$tz_select .= '<optgroup label="' . $user->lang(array('timezones', 'UTC_OFFSET_CURRENT'), $timezone['offset'], $timezone['current']) . '">';
-			$opt_group = $timezone['offset'];
-			$template->assign_block_vars('timezone_select', array(
-				'LABEL'		=> $user->lang(array('timezones', 'UTC_OFFSET_CURRENT'), $timezone['offset'], $timezone['current']),
-				'VALUE'		=> $key . ' - ' . $timezone['current'],
-			));
+			$tz_data[$timezone['offset']] = [
+				'label'		=> $user->lang(array('timezones', 'UTC_OFFSET_CURRENT'), $timezone['offset'], $timezone['current']),
+				'value'		=> $key . ' - ' . $timezone['current'],
+				'options'	=> [],
+				'selected'	=> !empty($default_offset) && strpos($key, $default_offset) !== false,
+				'data'		=> ['tz-value'	=> $key . ' - ' . $timezone['current']],
+			];
 
-			$selected = (!empty($default_offset) && strpos($key, $default_offset) !== false) ? ' selected="selected"' : '';
-			$template->assign_block_vars('timezone_date', array(
-				'VALUE'		=> $key . ' - ' . $timezone['current'],
-				'SELECTED'	=> !empty($selected),
-				'TITLE'		=> $user->lang(array('timezones', 'UTC_OFFSET_CURRENT'), $timezone['offset'], $timezone['current']),
-			));
+			$opt_group = $timezone['offset'];
 		}
 
 		$label = $timezone['tz'];
@@ -516,19 +510,15 @@ function phpbb_timezone_select($template, $user, $default = '', $truncate = fals
 			$label = truncate_string($label, 50, 255, false, '...');
 		}
 
-		// Also generate timezone_select for backwards compatibility
-		$selected = ($timezone['tz'] === $default) ? ' selected="selected"' : '';
-		$tz_select .= '<option title="' . $title . '" value="' . $timezone['tz'] . '"' . $selected . '>' . $label . '</option>';
-		$template->assign_block_vars('timezone_select.timezone_options', array(
+		$tz_data[$timezone['offset']]['options'][] = [
 			'TITLE'			=> $title,
-			'VALUE'			=> $timezone['tz'],
-			'SELECTED'		=> !empty($selected),
-			'LABEL'			=> $label,
-		));
+			'value'			=> $timezone['tz'],
+			'selected'		=> $timezone['tz'] === $default,
+			'label'			=> $label,
+		];
 	}
-	$tz_select .= '</optgroup>';
 
-	return $tz_select;
+	return $tz_data;
 }
 
 // Functions handling topic/post tracking/marking
@@ -1806,6 +1796,31 @@ function redirect($url, $return = false, $disable_cd_check = false)
 }
 
 /**
+ * Returns the install redirect path for phpBB.
+ *
+ * @param string $phpbb_root_path The root path of the phpBB installation.
+ * @param string $phpEx The file extension of php files, e.g., "php".
+ * @return string The install redirect path.
+ */
+function phpbb_get_install_redirect(string $phpbb_root_path, string $phpEx): string
+{
+	$script_name = (!empty($_SERVER['REQUEST_URI'])) ? $_SERVER['REQUEST_URI'] : getenv('REQUEST_URI');
+	if (!$script_name)
+	{
+		$script_name = (!empty($_SERVER['PHP_SELF'])) ? $_SERVER['PHP_SELF'] : getenv('PHP_SELF');
+	}
+
+	// Add trailing dot to prevent dirname() from returning parent directory if $script_name is a directory
+	$script_name = substr($script_name, -1) === '/' ? $script_name . '.' : $script_name;
+
+	// $phpbb_root_path accounts for redirects from e.g. /adm
+	$script_path = trim(dirname($script_name)) . '/' . $phpbb_root_path . 'install/app.' . $phpEx;
+	// Replace any number of consecutive backslashes and/or slashes with a single slash
+	// (could happen on some proxy setups and/or Windows servers)
+	return preg_replace('#[\\\\/]{2,}#', '/', $script_path);
+}
+
+/**
 * Re-Apply session id after page reloads
 */
 function reapply_sid($url, $is_route = false)
@@ -2852,7 +2867,7 @@ function get_censor_preg_expression($word)
 
 /**
 * Returns the first block of the specified IPv6 address and as many additional
-* ones as specified in the length paramater.
+* ones as specified in the length parameter.
 * If length is zero, then an empty string is returned.
 * If length is greater than 3 the complete IP will be returned
 */
@@ -2861,6 +2876,14 @@ function short_ipv6($ip, $length)
 	if ($length < 1)
 	{
 		return '';
+	}
+
+	// Handle IPv4 embedded IPv6 addresses
+	if (preg_match('/(?:\d{1,3}\.){3}\d{1,3}$/i', $ip))
+	{
+		$binary_ip = inet_pton($ip);
+		$ip_v6 = $binary_ip ? inet_ntop($binary_ip) : $ip;
+		$ip = $ip_v6 ?: $ip;
 	}
 
 	// extend IPv6 addresses
@@ -3626,15 +3649,11 @@ function phpbb_get_avatar($row, $alt, $ignore_config = false, $lazy = false)
 	{
 		if ($lazy)
 		{
-			// Determine board url - we may need it later
-			$board_url = generate_board_url() . '/';
 			// This path is sent with the base template paths in the assign_vars()
 			// call below. We need to correct it in case we are accessing from a
 			// controller because the web paths will be incorrect otherwise.
 			$phpbb_path_helper = $phpbb_container->get('path_helper');
-			$corrected_path = $phpbb_path_helper->get_web_root_path();
-
-			$web_path = (defined('PHPBB_USE_BOARD_URL_PATH') && PHPBB_USE_BOARD_URL_PATH) ? $board_url : $corrected_path;
+			$web_path = $phpbb_path_helper->get_web_root_path();
 
 			$theme = "{$web_path}styles/" . rawurlencode($user->style['style_path']) . '/theme';
 
@@ -3822,18 +3841,15 @@ function page_header($page_title = '', $display_online_list = false, $item_id = 
 		$db->sql_freeresult($result);
 	}
 
-	// Determine board url - we may need it later
-	$board_url = generate_board_url() . '/';
 	// This path is sent with the base template paths in the assign_vars()
 	// call below. We need to correct it in case we are accessing from a
 	// controller because the web paths will be incorrect otherwise.
 	/* @var $phpbb_path_helper \phpbb\path_helper */
 	$phpbb_path_helper = $phpbb_container->get('path_helper');
-	$corrected_path = $phpbb_path_helper->get_web_root_path();
-	$web_path = (defined('PHPBB_USE_BOARD_URL_PATH') && PHPBB_USE_BOARD_URL_PATH) ? $board_url : $corrected_path;
+	$web_path = $phpbb_path_helper->get_web_root_path();
 
 	// Send a proper content-language to the output
-	$user_lang = $user->lang['USER_LANG'];
+	$user_lang = $user->lang('USER_LANG');
 	if (strpos($user_lang, '-x-') !== false)
 	{
 		$user_lang = substr($user_lang, 0, strpos($user_lang, '-x-'));
@@ -3931,7 +3947,7 @@ function page_header($page_title = '', $display_online_list = false, $item_id = 
 		'_SID'				=> $_SID,
 		'SESSION_ID'		=> $user->session_id,
 		'ROOT_PATH'			=> $web_path,
-		'BOARD_URL'			=> $board_url,
+		'BOARD_URL'			=> generate_board_url() . '/',
 		'PHPBB_VERSION'		=> PHPBB_VERSION,
 		'PHPBB_MAJOR'		=> $phpbb_major,
 
@@ -3939,6 +3955,7 @@ function page_header($page_title = '', $display_online_list = false, $item_id = 
 		'L_INDEX'			=> ($config['board_index_text'] !== '') ? $config['board_index_text'] : $user->lang['FORUM_INDEX'],
 		'L_SITE_HOME'		=> ($config['site_home_text'] !== '') ? $config['site_home_text'] : $user->lang['HOME'],
 		'L_ONLINE_EXPLAIN'	=> $l_online_time,
+		'L_RECAPTCHA_LANG'	=> $user->lang('RECAPTCHA_LANG'),
 
 		'U_PRIVATEMSGS'			=> append_sid("{$phpbb_root_path}ucp.$phpEx", 'i=pm&amp;folder=inbox'),
 		'U_RETURN_INBOX'		=> append_sid("{$phpbb_root_path}ucp.$phpEx", 'i=pm&amp;folder=inbox'),
@@ -3979,9 +3996,9 @@ function page_header($page_title = '', $display_online_list = false, $item_id = 
 		'S_USER_LANG'			=> $user_lang,
 		'S_USER_BROWSER'		=> (isset($user->data['session_browser'])) ? $user->data['session_browser'] : $user->lang['UNKNOWN_BROWSER'],
 		'S_USERNAME'			=> $user->data['username'],
-		'S_CONTENT_DIRECTION'	=> $user->lang['DIRECTION'],
-		'S_CONTENT_FLOW_BEGIN'	=> ($user->lang['DIRECTION'] == 'ltr') ? 'left' : 'right',
-		'S_CONTENT_FLOW_END'	=> ($user->lang['DIRECTION'] == 'ltr') ? 'right' : 'left',
+		'S_CONTENT_DIRECTION'	=> $user->lang('DIRECTION'),
+		'S_CONTENT_FLOW_BEGIN'	=> ($user->lang('DIRECTION')  == 'ltr') ? 'left' : 'right',
+		'S_CONTENT_FLOW_END'	=> ($user->lang('DIRECTION')  == 'ltr') ? 'right' : 'left',
 		'S_CONTENT_ENCODING'	=> 'UTF-8',
 		'S_TIMEZONE'			=> sprintf($user->lang['ALL_TIMES'], $timezone_offset, $timezone_name),
 		'S_DISPLAY_ONLINE_LIST'	=> ($l_online_time) ? 1 : 0,

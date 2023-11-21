@@ -189,7 +189,7 @@ function generate_smilies($mode, $forum_id)
 
 	if (count($smilies))
 	{
-		$root_path = (defined('PHPBB_USE_BOARD_URL_PATH') && PHPBB_USE_BOARD_URL_PATH) ? generate_board_url() . '/' : $phpbb_path_helper->get_web_root_path();
+		$root_path = $phpbb_path_helper->get_web_root_path();
 
 		foreach ($smilies as $row)
 		{
@@ -421,7 +421,7 @@ function update_post_information($type, $ids, $return_update_sql = false)
 */
 function posting_gen_topic_icons($mode, $icon_id)
 {
-	global $phpbb_root_path, $config, $template, $cache;
+	global $phpbb_root_path, $phpbb_path_helper, $config, $template, $cache;
 
 	// Grab icons
 	$icons = $cache->obtain_icons();
@@ -433,7 +433,7 @@ function posting_gen_topic_icons($mode, $icon_id)
 
 	if (count($icons))
 	{
-		$root_path = (defined('PHPBB_USE_BOARD_URL_PATH') && PHPBB_USE_BOARD_URL_PATH) ? generate_board_url() . '/' : $phpbb_root_path;
+		$root_path = $phpbb_path_helper->get_web_root_path();
 
 		foreach ($icons as $id => $data)
 		{
@@ -868,7 +868,14 @@ function posting_gen_attachment_entry($attachment_data, &$filename_data, $show_a
 				$hidden .= '<input type="hidden" name="attachment_data[' . $count . '][' . $key . ']" value="' . $value . '" />';
 			}
 
-			$download_link = $phpbb_container->get('controller.helper')->route('phpbb_storage_attachment', ['file' => (int) $attach_row['attach_id']]);
+			$download_link = $phpbb_container->get('controller.helper')
+				->route(
+					'phpbb_storage_attachment',
+					[
+						'id'		=> (int) $attach_row['attach_id'],
+						'filename'	=> $attach_row['real_filename'],
+					]
+				);
 
 			$attachrow_template_vars[(int) $attach_row['attach_id']] = array(
 				'FILENAME'			=> utf8_basename($attach_row['real_filename']),
@@ -1346,7 +1353,7 @@ function delete_post($forum_id, $topic_id, $post_id, &$data, $is_soft = false, $
 	{
 		$post_mode = 'delete_first_post';
 	}
-	else if ($data['topic_last_post_id'] == $post_id)
+	else if ($data['topic_last_post_id'] <= $post_id)
 	{
 		$post_mode = 'delete_last_post';
 	}
@@ -2872,7 +2879,14 @@ function phpbb_handle_post_delete($forum_id, $topic_id, $post_id, &$post_data, $
 					$delete_reason
 				));
 
-				$meta_info = append_sid("{$phpbb_root_path}viewtopic.$phpEx", "p=$next_post_id") . "#p$next_post_id";
+				if ($next_post_id > 0)
+				{
+					$meta_info = append_sid("{$phpbb_root_path}viewtopic.$phpEx", "p=$next_post_id") . "#p$next_post_id";
+				}
+				else
+				{
+					$meta_info = append_sid("{$phpbb_root_path}viewtopic.$phpEx", "t=$topic_id");
+				}
 				$message = $user->lang['POST_DELETED'];
 
 				if (!$request->is_ajax())

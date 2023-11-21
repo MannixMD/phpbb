@@ -387,7 +387,7 @@ abstract class driver implements driver_interface
 	/**
 	* {@inheritDoc}
 	*/
-	function sql_fetchfield($field, $rownum = false, $query_id = false)
+	function sql_fetchfield($field, $rownum = false, &$query_id = false)
 	{
 		global $cache;
 
@@ -691,6 +691,14 @@ abstract class driver implements driver_interface
 	}
 
 	/**
+	 * {@inheritDoc}
+	 */
+	public function sql_nextid()
+	{
+		return $this->sql_last_inserted_id();
+	}
+
+	/**
 	* {@inheritDoc}
 	*/
 	function cast_expr_to_string($expression)
@@ -716,43 +724,38 @@ abstract class driver implements driver_interface
 			return false;
 		}
 
-		if ($this->multi_insert)
+		$ary = array();
+		foreach ($sql_ary as $_sql_ary)
 		{
-			$ary = array();
-			foreach ($sql_ary as $id => $_sql_ary)
+			// If by accident the sql array is only one-dimensional we build a normal insert statement
+			if (!is_array($_sql_ary))
 			{
-				// If by accident the sql array is only one-dimensional we build a normal insert statement
-				if (!is_array($_sql_ary))
-				{
-					return $this->sql_query('INSERT INTO ' . $table . ' ' . $this->sql_build_array('INSERT', $sql_ary));
-				}
+				return $this->sql_query('INSERT INTO ' . $table . ' ' . $this->sql_build_array('INSERT', $sql_ary));
+			}
 
+			// Add values to set to $ary if multi insert is supported, otherwise run every insert query separately
+			if ($this->multi_insert)
+			{
 				$values = array();
-				foreach ($_sql_ary as $key => $var)
+				foreach ($_sql_ary as $var)
 				{
 					$values[] = $this->_sql_validate_value($var);
 				}
 				$ary[] = '(' . implode(', ', $values) . ')';
 			}
-
-			return $this->sql_query('INSERT INTO ' . $table . ' ' . ' (' . implode(', ', array_keys($sql_ary[0])) . ') VALUES ' . implode(', ', $ary));
-		}
-		else
-		{
-			foreach ($sql_ary as $ary)
+			else
 			{
-				if (!is_array($ary))
-				{
-					return false;
-				}
-
-				$result = $this->sql_query('INSERT INTO ' . $table . ' ' . $this->sql_build_array('INSERT', $ary));
-
+				$result = $this->sql_query('INSERT INTO ' . $table . ' ' . $this->sql_build_array('INSERT', $_sql_ary));
 				if (!$result)
 				{
 					return false;
 				}
 			}
+		}
+
+		if ($this->multi_insert)
+		{
+			return $this->sql_query('INSERT INTO ' . $table . ' ' . ' (' . implode(', ', array_keys($sql_ary[0])) . ') VALUES ' . implode(', ', $ary));
 		}
 
 		return true;
@@ -1322,5 +1325,22 @@ abstract class driver implements driver_interface
 		$this->sql_freeresult($result);
 
 		return $rows_total;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	public function clean_query_id(mixed $query_id): int|string|null
+	{
+		// Some DBMS functions accept/return objects and/or resources instead if identifiers
+		// Attempting to use objects/resources as array keys will throw error, hence correctly handle all cases
+		if (is_resource($query_id))
+		{
+			return function_exists('get_resource_id') ? get_resource_id($query_id) : (int) $query_id;
+		}
+		else
+		{
+			return is_object($query_id) ? spl_object_id($query_id) : $query_id;
+		}
 	}
 }
